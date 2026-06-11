@@ -5,7 +5,7 @@ from datetime import datetime
 CLIENTS_DB = "/opt/xray-bot/clients.json"
 CONFIG_PATH = "/usr/local/etc/xray/config.json"
 CONFIG_BACKUP = "/usr/local/etc/xray/config.json.bak"
-INBOUND_TAGS = ["proxy", "hysteria", "split"]
+INBOUND_TAGS = ["proxy", "split"]
 
 def remove_client(email):
     with open(CONFIG_PATH) as f:
