@@ -1,0 +1,7 @@
+[Unit]
+Description=Cleanup expired Xray clients
+
+[Service]
+Type=oneshot
+ExecStart=/opt/xray-bot/venv/bin/python /opt/xray-bot/cleanup_expired.py
+User=root

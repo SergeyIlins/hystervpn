@@ -1,0 +1,15 @@
+[Unit]
+Description=Xray Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/xray-bot
+Environment="PATH=/opt/xray-bot/venv/bin"
+ExecStart=/opt/xray-bot/venv/bin/python /opt/xray-bot/bot.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
