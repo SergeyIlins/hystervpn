@@ -13,7 +13,6 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 
 from config import (
     TELEGRAM_BOT_TOKEN, ALLOWED_USERS, SERVER_IP, PUBLIC_KEY, SHORT_ID, SNI,
-    HYSTERIA_PASSWORD, HYSTERIA_PORT, HYSTERIA_OBFS,
     SPLIT_PORT, SPLIT_PATH
 )
 
@@ -22,7 +21,6 @@ logger = logging.getLogger(__name__)
 
 INBOUND_TAGS = {
     "vless": "proxy",
-    "hysteria2": "hysteria",
     "split": "split"
 }
 CONFIG_PATH = "/usr/local/etc/xray/config.json"
@@ -89,7 +87,7 @@ def generate_uuid():
         raise Exception(f"Ошибка генерации UUID: {err}")
     return out
 
-def add_client_to_xray(email, uuid_or_password, protocol='vless'):
+def add_client_to_xray(email, uuid, protocol='vless'):
     config = load_xray_config()
     tag = INBOUND_TAGS[protocol]
     for inbound in config['inbounds']:
@@ -98,12 +96,10 @@ def add_client_to_xray(email, uuid_or_password, protocol='vless'):
             for c in clients:
                 if c.get('email') == email:
                     raise Exception(f"Клиент с email {email} уже существует")
-            if protocol == 'vless' or protocol == 'split':
-                clients.append({"email": email, "id": uuid_or_password, "level": 0})
-                if protocol == 'vless':
-                    clients[-1]["flow"] = "xtls-rprx-vision"
-            else:  # hysteria2
-                clients.append({"email": email, "password": uuid_or_password, "level": 0})
+            entry = {"email": email, "id": uuid, "level": 0}
+            if protocol == 'vless':
+                entry["flow"] = "xtls-rprx-vision"
+            clients.append(entry)
             save_xray_config(config)
             reload_xray()
             return True
@@ -133,9 +129,6 @@ def generate_vless_link(uuid, name):
     params = f"security=reality&encryption=none&pbk={PUBLIC_KEY}&sni={SNI}&fp=chrome&type=tcp&flow=xtls-rprx-vision&sid={SHORT_ID}"
     return f"{base}?{params}#{name}"
 
-def generate_hysteria_link(name):
-    return f"hysteria2://{HYSTERIA_PASSWORD}@{SERVER_IP}:{HYSTERIA_PORT}?sni={SNI}&insecure=1&obfs={HYSTERIA_OBFS}&alpn=h3#hy-{name}"
-
 def generate_split_link(uuid, name):
     return f"vless://{uuid}@{SERVER_IP}:{SPLIT_PORT}?type=xhttp&path={SPLIT_PATH}&security=none#sp-{name}"
 
@@ -158,19 +151,6 @@ def generate_client_conf(uuid_or_password, name, protocol='vless'):
                     }
                 },
                 "tag": "proxy"
-            }]
-        }
-    elif protocol == 'hysteria2':
-        conf = {
-            "outbounds": [{
-                "protocol": "hysteria2",
-                "settings": {
-                    "server": f"{SERVER_IP}:{HYSTERIA_PORT}",
-                    "password": HYSTERIA_PASSWORD,
-                    "obfs": {"type": HYSTERIA_OBFS, "sni": SNI},
-                    "tls": {"insecure": True, "alpn": ["h3"]}
-                },
-                "tag": "hysteria"
             }]
         }
     elif protocol == 'split':
@@ -269,7 +249,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         duration_text = next((k for k, v in DURATION_MAP.items() if v == seconds), f"{seconds} сек")
         keyboard = [
             [InlineKeyboardButton("🚀 Стандарт (VLESS)", callback_data="proto_vless")],
-            [InlineKeyboardButton("🎥 Видеозвонок (Hysteria2)", callback_data="proto_hysteria")],
             [InlineKeyboardButton("🛡️ Максимальная защита (VLESS+Split)", callback_data="proto_both_split")],
             [InlineKeyboardButton("◀️ Назад", callback_data="add_client")]
         ]
@@ -343,18 +322,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_photo(photo=qr, caption=f"QR-код для {name}")
                 await update.message.reply_document(document=BytesIO(conf.encode()), filename=f"{name}_vless.conf")
                 await update.message.reply_text(f"✅ Клиент *{name}* (VLESS) добавлен.\n\nСсылка: `{link}`", parse_mode="Markdown")
-            elif proto == 'hysteria':
-                email = name
-                add_client_to_xray(email, HYSTERIA_PASSWORD, 'hysteria2')
-                db = load_clients_db()
-                db[email] = {"name": name, "uuid": HYSTERIA_PASSWORD, "expires": expire_ts, "protocol": "hysteria2"}
-                save_clients_db(db)
-                link = generate_hysteria_link(name)
-                qr = generate_qr_code(link)
-                conf = generate_client_conf(HYSTERIA_PASSWORD, name, 'hysteria2')
-                await update.message.reply_photo(photo=qr, caption=f"QR-код для {name} (Hysteria2)")
-                await update.message.reply_document(document=BytesIO(conf.encode()), filename=f"{name}_hysteria.conf")
-                await update.message.reply_text(f"✅ Клиент *{name}* (Hysteria2) добавлен.\n\nСсылка: `{link}`", parse_mode="Markdown")
             elif proto == 'both_split':
                 uuid_v = generate_uuid()
                 email_v = f"{name}_v"
