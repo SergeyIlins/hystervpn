@@ -1,5 +1,6 @@
 #!/bin/bash
-# Установщик Xray VLESS+REALITY + SplitHTTP + Telegram-бот
+# Установщик Xray VLESS+REALITY + SplitHTTP + Telegram-бот (версия без Hysteria2)
+# Поддерживает Debian 12/13, Ubuntu 22.04+
 # Запуск: sudo bash install.sh
 
 set -e
@@ -15,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # ---------- 1. Системные пакеты ----------
 echo -e "${YELLOW}[1/10] Установка системных пакетов...${NC}"
 apt update
-apt install -y curl wget unzip git jq python3 python3-pip python3-venv qrencode ufw openssl
+apt install -y curl wget unzip git jq python3 python3-pip python3-venv qrencode ufw openssl python3-dev libjpeg-dev zlib1g-dev
 
 # ---------- 2. Установка Xray ----------
 echo -e "${YELLOW}[2/10] Установка Xray...${NC}"
@@ -89,6 +90,11 @@ SERVER_IP=$(curl -s ifconfig.co)
 read -p "Публичный IP сервера [$SERVER_IP]: " INPUT_IP
 SERVER_IP=${INPUT_IP:-$SERVER_IP}
 
+# Проверка, что токен не плейсхолдер
+if [[ "$BOT_TOKEN" == "YOUR_BOT_TOKEN" ]]; then
+    echo -e "${RED}Ошибка: вы не ввели реальный токен бота.${NC}"; exit 1
+fi
+
 # Подстановка в config.py
 sed -i "s/^TELEGRAM_BOT_TOKEN = .*/TELEGRAM_BOT_TOKEN = \"$BOT_TOKEN\"/" config.py
 sed -i "s/^ALLOWED_USERS = .*/ALLOWED_USERS = {$ADMIN_ID}/" config.py
@@ -123,6 +129,33 @@ echo "VLESS 443: $(ss -tulpn | grep -q ':443.*xray' && echo OK || echo FAIL)"
 echo "SplitHTTP 8081: $(ss -tulpn | grep -q ':8081.*xray' && echo OK || echo FAIL)"
 echo "Бот: $(systemctl is-active xray-bot)"
 
+# Тест добавления/удаления пользователя (как раньше)
+echo -e "${YELLOW}Проверка редактирования конфига...${NC}"
+TEST_UUID=$(xray uuid)
+TEST_EMAIL="test_$(date +%s)"
+TMP_CONFIG=$(mktemp)
+jq --arg email "$TEST_EMAIL" --arg uuid "$TEST_UUID" \
+   '.inbounds[] |= if .tag=="proxy" then .settings.clients += [{"email":$email, "id":$uuid, "flow":"xtls-rprx-vision", "level":0}] else . end' \
+   "$CONFIG_FILE" > "$TMP_CONFIG"
+mv "$TMP_CONFIG" "$CONFIG_FILE"
+systemctl reload xray 2>/dev/null || systemctl restart xray
+sleep 1
+jq --arg email "$TEST_EMAIL" \
+   '.inbounds[] |= if .tag=="proxy" then .settings.clients |= map(select(.email != $email)) else . end' \
+   "$CONFIG_FILE" > "$TMP_CONFIG"
+mv "$TMP_CONFIG" "$CONFIG_FILE"
+systemctl reload xray 2>/dev/null || systemctl restart xray
+echo -e "${GREEN}✓ Редактирование конфига работает${NC}"
+
+# ---------- 10. Финальная информация ----------
 echo -e "${GREEN}=== Установка завершена ===${NC}"
 echo "Публичный ключ REALITY: $PUBLIC_KEY"
 echo "ShortId: $SHORT_ID"
+echo "IP сервера: $SERVER_IP"
+echo "Конфиг Xray: $CONFIG_FILE"
+echo "Каталог бота: $BOT_DIR"
+echo ""
+echo "Дальнейшие шаги:"
+echo "1. Убедитесь, что бот отвечает: /menu в Telegram"
+echo "2. При необходимости отредактируйте config.py: nano $BOT_DIR/config.py"
+echo "3. Проверьте логи: journalctl -u xray-bot -f"
