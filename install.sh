@@ -1,10 +1,10 @@
 #!/bin/bash
-# Установщик Xray VLESS+REALITY + Hysteria2 + SplitHTTP + Telegram-бот
+# Установщик Xray VLESS+REALITY + SplitHTTP + Telegram-бот
 # Запуск: sudo bash install.sh
 
 set -e
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-echo -e "${GREEN}=== Установка VPN-сервера (Hysteria2, VLESS, SplitHTTP) ===${NC}"
+echo -e "${GREEN}=== Установка VPN-сервера (VLESS + SplitHTTP) ===${NC}"
 
 if [ "$EUID" -ne 0 ]; then
     echo -e "${RED}Пожалуйста, запустите скрипт с правами root (sudo).${NC}"; exit 1
@@ -31,31 +31,21 @@ XRAY_KEYS_OUTPUT=$(xray x25519)
 PRIVATE_KEY=$(echo "$XRAY_KEYS_OUTPUT" | grep -E 'Private[ ]?Key:' | awk '{print $NF}')
 PUBLIC_KEY=$(echo "$XRAY_KEYS_OUTPUT" | grep -E 'Public[ ]?Key:|Password[ ]?\(PublicKey\):' | awk '{print $NF}')
 SHORT_ID=$(openssl rand -hex 8)
-HYSTERIA_PASSWORD=$(openssl rand -base64 24)
 
 if [ -z "$PRIVATE_KEY" ] || [ -z "$PUBLIC_KEY" ]; then
     echo -e "${RED}Не удалось извлечь ключи REALITY.${NC}"; exit 1
 fi
 
-# ---------- 4. Сертификат для Hysteria2 ----------
-echo -e "${YELLOW}[4/10] Создание сертификата для Hysteria2...${NC}"
-mkdir -p /etc/xray
-openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-    -keyout /etc/xray/key.pem -out /etc/xray/cert.pem \
-    -subj "/CN=www.microsoft.com"
-chmod 600 /etc/xray/key.pem /etc/xray/cert.pem
-
-# ---------- 5. Конфиг Xray ----------
-echo -e "${YELLOW}[5/10] Создание config.json...${NC}"
+# ---------- 4. Конфиг Xray ----------
+echo -e "${YELLOW}[4/10] Создание config.json...${NC}"
 CONFIG_FILE="/usr/local/etc/xray/config.json"
 cp "$SCRIPT_DIR/config.json.example" "$CONFIG_FILE"
 sed -i "s/PRIVATE_KEY_PLACEHOLDER/$PRIVATE_KEY/g" "$CONFIG_FILE"
 sed -i "s/SHORT_ID_PLACEHOLDER/$SHORT_ID/g" "$CONFIG_FILE"
-sed -i "s/HYSTERIA_PASSWORD_PLACEHOLDER/$HYSTERIA_PASSWORD/g" "$CONFIG_FILE"
 chmod 644 "$CONFIG_FILE"
 
-# ---------- 6. Запуск Xray ----------
-echo -e "${YELLOW}[6/10] Проверка и запуск Xray...${NC}"
+# ---------- 5. Запуск Xray ----------
+echo -e "${YELLOW}[5/10] Проверка и запуск Xray...${NC}"
 if ! xray -test -config "$CONFIG_FILE"; then
     echo -e "${RED}Ошибка в конфигурации Xray!${NC}"; exit 1
 fi
@@ -68,16 +58,16 @@ else
     echo -e "${RED}Xray не запустился!${NC}"; exit 1
 fi
 
-# ---------- 7. NAT и IP forward ----------
-echo -e "${YELLOW}[7/10] Настройка NAT...${NC}"
+# ---------- 6. NAT и IP forward ----------
+echo -e "${YELLOW}[6/10] Настройка NAT...${NC}"
 IFACE=$(ip route | grep default | awk '{print $5}')
 iptables -t nat -A POSTROUTING -o "$IFACE" -j MASQUERADE
 apt install -y iptables-persistent
 netfilter-persistent save
 sysctl -w net.ipv4.ip_forward=1
 
-# ---------- 8. Окружение бота ----------
-echo -e "${YELLOW}[8/10] Установка Python-окружения...${NC}"
+# ---------- 7. Окружение бота ----------
+echo -e "${YELLOW}[7/10] Установка Python-окружения...${NC}"
 BOT_DIR="/opt/xray-bot"
 mkdir -p "$BOT_DIR"
 cp "$SCRIPT_DIR/bot.py" "$BOT_DIR/"
@@ -105,12 +95,11 @@ sed -i "s/^ALLOWED_USERS = .*/ALLOWED_USERS = {$ADMIN_ID}/" config.py
 sed -i "s/^SERVER_IP = .*/SERVER_IP = \"$SERVER_IP\"/" config.py
 sed -i "s/^PUBLIC_KEY = .*/PUBLIC_KEY = \"$PUBLIC_KEY\"/" config.py
 sed -i "s/^SHORT_ID = .*/SHORT_ID = \"$SHORT_ID\"/" config.py
-sed -i "s/^HYSTERIA_PASSWORD = .*/HYSTERIA_PASSWORD = \"$HYSTERIA_PASSWORD\"/" config.py
 sed -i "s/^SPLIT_PORT = .*/SPLIT_PORT = 8081/" config.py
 sed -i "s|^SPLIT_PATH = .*|SPLIT_PATH = \"/stream\"|" config.py
 
-# ---------- 9. Сервисы ----------
-echo -e "${YELLOW}[9/10] Установка systemd-сервисов...${NC}"
+# ---------- 8. Сервисы ----------
+echo -e "${YELLOW}[8/10] Установка systemd-сервисов...${NC}"
 cp "$SCRIPT_DIR/xray-bot.service" /etc/systemd/system/
 cp "$SCRIPT_DIR/xray-cleanup.service" /etc/systemd/system/
 cp "$SCRIPT_DIR/xray-cleanup.timer" /etc/systemd/system/
@@ -128,14 +117,12 @@ else
     echo -e "${RED}Бот не запустился! Проверьте journalctl -u xray-bot${NC}"
 fi
 
-# ---------- 10. Автотестирование ----------
-echo -e "${YELLOW}[10/10] Тестирование...${NC}"
+# ---------- 9. Автотестирование ----------
+echo -e "${YELLOW}[9/10] Тестирование...${NC}"
 echo "VLESS 443: $(ss -tulpn | grep -q ':443.*xray' && echo OK || echo FAIL)"
-echo "Hysteria2 8443: $(ss -tulpn | grep -q ':8443.*xray' && echo OK || echo FAIL)"
 echo "SplitHTTP 8081: $(ss -tulpn | grep -q ':8081.*xray' && echo OK || echo FAIL)"
 echo "Бот: $(systemctl is-active xray-bot)"
 
 echo -e "${GREEN}=== Установка завершена ===${NC}"
 echo "Публичный ключ REALITY: $PUBLIC_KEY"
 echo "ShortId: $SHORT_ID"
-echo "Пароль Hysteria2: $HYSTERIA_PASSWORD"
