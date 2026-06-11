@@ -21,24 +21,6 @@
       }
     },
     {
-      "port": 8443,
-      "protocol": "hysteria2",
-      "tag": "hysteria",
-      "settings": {
-        "clients": [],
-        "password": "HYSTERIA_PASSWORD_PLACEHOLDER",
-        "ignoreClientBandwidth": true
-      },
-      "streamSettings": {
-        "security": "tls",
-        "tlsSettings": {
-          "certificates": [
-            {"certificateFile": "/etc/xray/cert.pem", "keyFile": "/etc/xray/key.pem"}
-          ]
-        }
-      }
-    },
-    {
       "port": 8081,
       "protocol": "vless",
       "tag": "split",
@@ -58,7 +40,7 @@
   ],
   "routing": {
     "rules": [
-      {"inboundTag": ["proxy", "hysteria", "split"], "outboundTag": "direct"}
+      {"inboundTag": ["proxy", "split"], "outboundTag": "direct"}
     ]
   }
 }
